@@ -1,0 +1,9 @@
+[
+ {"request_id":"i-signal-1","op":"observe","id":"violation-a","binding":"binding-a","kind":"syscall","source":"agent-a","at":10,"confidence":95},
+ {"request_id":"i-signal-2","op":"observe","id":"violation-b","binding":"binding-a","kind":"syscall","source":"agent-b","at":11,"confidence":90},
+ {"request_id":"i-freeze","op":"quarantine","id":"incident-a","binding":"binding-a","scope":"tenant","reason":"two independent sources"},
+ {"request_id":"i-new-profile","subsystem":"profile","op":"publish","id":"profile-a","revision":2,"syscalls":["read"],"devices":["null"],"network":[],"required_feature":"seccomp"},
+ {"request_id":"i-activate","subsystem":"profile","op":"activate","id":"profile-a"},
+ {"request_id":"i-reset","op":"reset","id":"reset-a","binding":"binding-a","node_uid":"node-uid-a","new_digest":"f5a4d49d02701f586b0389c19db6d6a64d00b1d6fab2e89fbc25e00be7219e2a","at":12},
+ {"request_id":"i-release","op":"release","incident":"incident-a","new_profile":"profile-a","at":13}
+]

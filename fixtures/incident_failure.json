@@ -1,0 +1,4 @@
+[
+ {"request_id":"i-stale-reset","op":"reset","id":"bad-reset","binding":"binding-a","node_uid":"node-uid-a","new_digest":"wrong","at":14},
+ {"request_id":"i-ghost-release","op":"release","incident":"missing-incident","new_profile":"profile-a","at":14}
+]

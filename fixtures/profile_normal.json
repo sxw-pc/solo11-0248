@@ -1,0 +1,5 @@
+[
+ {"request_id":"p-node","op":"node","id":"node-a","uid":"node-uid-a","generation":1,"features":["seccomp"],"capacity":2},
+ {"request_id":"p-publish","op":"publish","id":"profile-a","revision":1,"syscalls":["read","write"],"devices":["null"],"network":["egress"],"required_feature":"seccomp"},
+ {"request_id":"p-activate","op":"activate","id":"profile-a"}
+]
