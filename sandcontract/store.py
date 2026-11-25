@@ -5,13 +5,14 @@ SCHEMA="""
 CREATE TABLE IF NOT EXISTS profiles(id TEXT PRIMARY KEY,revision INTEGER,digest TEXT,syscalls TEXT,devices TEXT,network TEXT,required_feature TEXT,status TEXT);
 CREATE TABLE IF NOT EXISTS nodes(id TEXT PRIMARY KEY,uid TEXT,generation INTEGER,features TEXT,capacity INTEGER);
 CREATE TABLE IF NOT EXISTS tenant_limits(tenant TEXT PRIMARY KEY,max_risk INTEGER,freeze INTEGER);
-CREATE TABLE IF NOT EXISTS workloads(id TEXT PRIMARY KEY,tenant TEXT,profile TEXT,node TEXT,epoch INTEGER,risk INTEGER,status TEXT);
+CREATE TABLE IF NOT EXISTS workloads(id TEXT PRIMARY KEY,tenant TEXT,profile TEXT,node TEXT,epoch INTEGER,risk INTEGER,capability TEXT,status TEXT);
 CREATE TABLE IF NOT EXISTS exceptions(id TEXT PRIMARY KEY,workload TEXT,capability TEXT,until_ts INTEGER,status TEXT);
 CREATE TABLE IF NOT EXISTS approvals(id TEXT PRIMARY KEY,exception_id TEXT,role TEXT,actor TEXT,until_ts INTEGER);
 CREATE TABLE IF NOT EXISTS bindings(id TEXT PRIMARY KEY,workload TEXT,profile_digest TEXT,node_uid TEXT,node_generation INTEGER,exception_id TEXT,status TEXT);
 CREATE TABLE IF NOT EXISTS starts(id TEXT PRIMARY KEY,binding TEXT,profile_digest TEXT,node_uid TEXT,at INTEGER);
 CREATE TABLE IF NOT EXISTS violations(id TEXT PRIMARY KEY,binding TEXT,kind TEXT,source TEXT,at INTEGER,confidence INTEGER);
 CREATE TABLE IF NOT EXISTS incidents(id TEXT PRIMARY KEY,binding TEXT,scope TEXT,status TEXT,reason TEXT);
+CREATE TABLE IF NOT EXISTS incident_members(incident TEXT,binding TEXT,PRIMARY KEY(incident,binding));
 CREATE TABLE IF NOT EXISTS resets(id TEXT PRIMARY KEY,binding TEXT,node_uid TEXT,new_digest TEXT,at INTEGER);
 CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY AUTOINCREMENT,subsystem TEXT,request_id TEXT UNIQUE,input TEXT,result TEXT);
 """

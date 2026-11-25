@@ -12,17 +12,18 @@ def run(db,x):
   limit=one(db,'SELECT * FROM tenant_limits WHERE tenant=?',(x['tenant'],))
   if not p or not limit or limit['freeze'] or x['risk']>limit['max_risk'] or x['risk']<0:return {'decision':'request_denied'}
   if one(db,'SELECT id FROM workloads WHERE id=?',(x['id'],)):return {'decision':'workload_conflict'}
-  db.execute('INSERT INTO workloads VALUES(?,?,?,?,?,?,?)',(x['id'],x['tenant'],x['profile'],None,1,x['risk'],'requested'))
+  db.execute('INSERT INTO workloads VALUES(?,?,?,?,?,?,?,?)',(x['id'],x['tenant'],x['profile'],None,1,x['risk'],x.get('capability'),'requested'))
   return {'decision':'requested'}
  if op=='exception':
   w=one(db,'SELECT * FROM workloads WHERE id=?',(x['workload'],))
-  if not w or x['until_ts']<=x['at'] or one(db,'SELECT id FROM exceptions WHERE id=?',(x['id'],)):return {'decision':'invalid_exception'}
+  if not w or x['capability']!=w['capability'] or x['until_ts']<=x['at'] or one(db,'SELECT id FROM exceptions WHERE id=?',(x['id'],)):return {'decision':'invalid_exception'}
   db.execute('INSERT INTO exceptions VALUES(?,?,?,?,?)',(x['id'],x['workload'],x['capability'],x['until_ts'],'pending'))
   return {'decision':'pending'}
  if op=='approve':
   e=one(db,'SELECT * FROM exceptions WHERE id=?',(x['exception'],))
   if not e or e['until_ts']<x['at'] or x['role'] not in ('security','owner'):return {'decision':'approval_denied'}
   if one(db,'SELECT id FROM approvals WHERE id=?',(x['id'],)):return {'decision':'approval_conflict'}
+  if one(db,'SELECT id FROM approvals WHERE exception_id=? AND actor=? AND role!=?',(x['exception'],x['actor'],x['role'])):return {'decision':'actor_role_conflict'}
   db.execute('INSERT INTO approvals VALUES(?,?,?,?,?)',(x['id'],x['exception'],x['role'],x['actor'],x['until_ts']))
   approvals=rows(db,'SELECT * FROM approvals WHERE exception_id=? AND until_ts>=?',(x['exception'],x['at']))
   if len({r['role'] for r in approvals})==2 and len({r['actor'] for r in approvals})>=2:
@@ -34,7 +35,7 @@ def run(db,x):
   p=one(db,'SELECT * FROM profiles WHERE id=?',(w['profile'],)) if w else None
   n=one(db,'SELECT * FROM nodes WHERE id=?',(x['node'],))
   limit=one(db,'SELECT * FROM tenant_limits WHERE tenant=?',(w['tenant'],)) if w else None
-  if not w or w['status']!='requested' or not p or p['status']!='active' or not n or p['required_feature'] not in json.loads(n['features']) or limit['freeze']:
+  if not w or w['status']!='requested' or not p or p['status']!='active' or not n or p['required_feature'] not in json.loads(n['features']) or limit['freeze'] or x.get('capability')!=w['capability']:
    return {'decision':'assignment_denied'}
   e=None
   if x.get('capability'):

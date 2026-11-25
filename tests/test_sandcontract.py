@@ -33,10 +33,10 @@ class Workflows(unittest.TestCase):
   self.fixture('profile_normal');self.act('admit','limit',tenant='t',max_risk=1)
   self.assertEqual(self.act('admit','request',id='w',tenant='t',profile='profile-a',risk=2),'request_denied')
  def test_two_distinct_approvals_required(self):
-  self.fixture('profile_normal');self.act('admit','limit',tenant='t',max_risk=3);self.act('admit','request',id='w',tenant='t',profile='profile-a',risk=2)
+  self.fixture('profile_normal');self.act('admit','limit',tenant='t',max_risk=3);self.act('admit','request',id='w',tenant='t',profile='profile-a',risk=2,capability='net-admin')
   self.act('admit','exception',id='e',workload='w',capability='net-admin',until_ts=50,at=2)
   self.assertEqual(self.act('admit','approve',id='a1',exception='e',role='security',actor='alice',until_ts=45,at=3),'pending_second_role')
-  self.assertEqual(self.act('admit','approve',id='a2',exception='e',role='owner',actor='alice',until_ts=45,at=4),'pending_second_role')
+  self.assertEqual(self.act('admit','approve',id='a2',exception='e',role='owner',actor='alice',until_ts=45,at=4),'actor_role_conflict')
   self.assertEqual(self.act('admit','assign',id='b',workload='w',node='node-a',capability='net-admin',at=5),'exception_missing')
   self.assertEqual(self.act('admit','approve',id='a3',exception='e',role='owner',actor='bob',until_ts=45,at=6),'approved')
  def test_node_capacity_and_generation_are_bound(self):
@@ -80,5 +80,41 @@ class Workflows(unittest.TestCase):
   self.assertEqual(self.act('incident','observe',id='signal',binding='binding-a',kind='syscall',source='agent-a',at=10,confidence=95),'credible')
   self.assertEqual(self.act('incident','observe',id='signal',binding='binding-a',kind='syscall',source='agent-b',at=11,confidence=95),'duplicate_signal')
   self.assertEqual(self.act('incident','quarantine',id='case',binding='binding-a',scope='tenant',reason='replayed source'),'tenant_scope_denied')
+ def test_assign_cannot_omit_requested_exception_capability(self):
+  self.fixture('profile_normal');self.act('admit','limit',tenant='t',max_risk=3)
+  self.act('admit','request',id='w',tenant='t',profile='profile-a',risk=2,capability='net-admin')
+  self.assertEqual(self.act('admit','assign',id='b',workload='w',node='node-a',at=5),'assignment_denied')
+  self.assertIsNone(one(self.db,'SELECT * FROM bindings WHERE id=?',('b',)))
+ def test_tenant_quarantine_requires_every_binding_reset(self):
+  self.base()
+  self.act('admit','request',id='workload-b',tenant='tenant-a',profile='profile-a',risk=1)
+  self.assertEqual(self.act('admit','assign',id='binding-b',workload='workload-b',node='node-a',at=9),'assigned')
+  self.act('incident','observe',id='v1',binding='binding-a',kind='syscall',source='agent-a',at=10,confidence=95)
+  self.act('incident','observe',id='v2',binding='binding-a',kind='syscall',source='agent-b',at=11,confidence=90)
+  self.assertEqual(self.act('incident','quarantine',id='all',binding='binding-a',scope='tenant',reason='two sources'),'tenant_frozen')
+  self.assertEqual(one(self.db,'SELECT status FROM bindings WHERE id=?',('binding-b',))['status'],'quarantined')
+  self.act('profile','publish',id='profile-a',revision=2,syscalls=['read'],devices=['null'],network=[],required_feature='seccomp')
+  self.act('profile','activate',id='profile-a')
+  new=one(self.db,'SELECT digest FROM profiles WHERE id=?',('profile-a',))['digest']
+  self.act('incident','reset',id='reset-a',binding='binding-a',node_uid='node-uid-a',new_digest=new,at=12)
+  self.assertEqual(self.act('incident','release',incident='all',new_profile='profile-a',at=13),'release_unverified')
+  self.assertEqual(one(self.db,'SELECT freeze FROM tenant_limits WHERE tenant=?',('tenant-a',))['freeze'],1)
+  self.act('incident','reset',id='reset-b',binding='binding-b',node_uid='node-uid-a',new_digest=new,at=13)
+  self.assertEqual(self.act('incident','release',incident='all',new_profile='profile-a',at=14),'released')
+  self.assertEqual(one(self.db,'SELECT status FROM bindings WHERE id=?',('binding-b',))['status'],'active')
+ def test_node_generation_change_blocks_old_reset_release(self):
+  self.base();self.act('incident','observe',id='v1',binding='binding-a',kind='syscall',source='agent-a',at=10,confidence=95)
+  self.act('incident','quarantine',id='case',binding='binding-a',scope='binding',reason='violation')
+  self.act('profile','publish',id='profile-a',revision=2,syscalls=['read'],devices=['null'],network=[],required_feature='seccomp');self.act('profile','activate',id='profile-a')
+  new=one(self.db,'SELECT digest FROM profiles WHERE id=?',('profile-a',))['digest']
+  self.act('incident','reset',id='reset',binding='binding-a',node_uid='node-uid-a',new_digest=new,at=12)
+  self.act('profile','node',id='node-a',uid='node-uid-new',generation=2,features=['seccomp'],capacity=2)
+  self.assertEqual(self.act('incident','release',incident='case',new_profile='profile-a',at=13),'release_unverified')
+ def test_reset_with_same_profile_does_not_resolve_incident(self):
+  self.base();self.act('incident','observe',id='v1',binding='binding-a',kind='syscall',source='agent-a',at=10,confidence=95)
+  self.act('incident','quarantine',id='case',binding='binding-a',scope='binding',reason='violation')
+  old=one(self.db,'SELECT digest FROM profiles WHERE id=?',('profile-a',))['digest']
+  self.act('incident','reset',id='same',binding='binding-a',node_uid='node-uid-a',new_digest=old,at=12)
+  self.assertEqual(self.act('incident','release',incident='case',new_profile='profile-a',at=13),'release_unverified')
 
 if __name__=='__main__':unittest.main()

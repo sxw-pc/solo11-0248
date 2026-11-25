@@ -1,6 +1,6 @@
 [
  {"request_id":"a-limit","op":"limit","tenant":"tenant-a","max_risk":3},
- {"request_id":"a-request","op":"request","id":"workload-a","tenant":"tenant-a","profile":"profile-a","risk":2},
+ {"request_id":"a-request","op":"request","id":"workload-a","tenant":"tenant-a","profile":"profile-a","risk":2,"capability":"net-admin"},
  {"request_id":"a-exception","op":"exception","id":"exception-a","workload":"workload-a","capability":"net-admin","until_ts":80,"at":5},
  {"request_id":"a-approve-security","op":"approve","id":"approval-1","exception":"exception-a","role":"security","actor":"alice","until_ts":70,"at":6},
  {"request_id":"a-approve-owner","op":"approve","id":"approval-2","exception":"exception-a","role":"owner","actor":"bob","until_ts":70,"at":7},
