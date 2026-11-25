@@ -70,5 +70,15 @@ class Workflows(unittest.TestCase):
   x={'request_id':'same','op':'limit','tenant':'t','max_risk':2}
   self.assertEqual(execute(self.db,'admit',x)['decision'],'limit_recorded')
   self.assertEqual(execute(self.db,'admit',dict(x,max_risk=3))['decision'],'request_conflict')
+ def test_profile_revocation_blocks_new_binding(self):
+  self.fixture('profile_normal');self.act('admit','limit',tenant='t',max_risk=3)
+  self.act('admit','request',id='w',tenant='t',profile='profile-a',risk=1)
+  self.assertEqual(self.act('profile','revoke',id='profile-a',revision=1),'revoked')
+  self.assertEqual(self.act('admit','assign',id='binding',workload='w',node='node-a',at=5),'assignment_denied')
+ def test_violation_identity_is_not_counted_twice(self):
+  self.base()
+  self.assertEqual(self.act('incident','observe',id='signal',binding='binding-a',kind='syscall',source='agent-a',at=10,confidence=95),'credible')
+  self.assertEqual(self.act('incident','observe',id='signal',binding='binding-a',kind='syscall',source='agent-b',at=11,confidence=95),'duplicate_signal')
+  self.assertEqual(self.act('incident','quarantine',id='case',binding='binding-a',scope='tenant',reason='replayed source'),'tenant_scope_denied')
 
 if __name__=='__main__':unittest.main()
