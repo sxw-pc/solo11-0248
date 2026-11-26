@@ -2,7 +2,7 @@ import argparse,json
 from pathlib import Path
 from .store import connect,execute,replay,rows
 def main():
- p=argparse.ArgumentParser();p.add_argument('command',choices=['profile','admit','incident','demo','report','replay']);p.add_argument('--db',required=True);p.add_argument('--fixture');a=p.parse_args()
+ p=argparse.ArgumentParser();p.add_argument('command',choices=['profile','admit','incident','retention','erasure','demo','report','replay']);p.add_argument('--db',required=True);p.add_argument('--fixture');a=p.parse_args()
  if a.command=='replay':result=replay(a.db)
  else:
   db=connect(a.db)

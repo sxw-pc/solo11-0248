@@ -8,3 +8,9 @@ def provisional_record(db,record_id,start_id,archive_id):
  if not one(db,'SELECT id FROM starts WHERE id=?',(start_id,)) or not archive_id:return {'decision':'unavailable'}
  db.execute('INSERT INTO retention_records VALUES(?,?,?,?)',(record_id,start_id,archive_id,'provisional'))
  return {'decision':'recorded','archive':archive_id}
+
+def run(db,x):
+ op=x['op']
+ if op=='provisional':
+  return provisional_record(db,x['id'],x['start_id'],x['archive_id'])
+ raise ValueError(op)
