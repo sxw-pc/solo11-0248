@@ -14,10 +14,18 @@ CREATE TABLE IF NOT EXISTS violations(id TEXT PRIMARY KEY,binding TEXT,kind TEXT
 CREATE TABLE IF NOT EXISTS incidents(id TEXT PRIMARY KEY,binding TEXT,scope TEXT,status TEXT,reason TEXT);
 CREATE TABLE IF NOT EXISTS incident_members(incident TEXT,binding TEXT,PRIMARY KEY(incident,binding));
 CREATE TABLE IF NOT EXISTS resets(id TEXT PRIMARY KEY,binding TEXT,node_uid TEXT,new_digest TEXT,at INTEGER);
+CREATE TABLE IF NOT EXISTS node_attestations(node_uid TEXT,node_generation INTEGER,kernel_build TEXT,filter_version TEXT,attestation TEXT,attestation_digest TEXT,PRIMARY KEY(node_uid,node_generation));
+CREATE TABLE IF NOT EXISTS compilations(id TEXT PRIMARY KEY,profile TEXT,profile_digest TEXT,node_uid TEXT,node_generation INTEGER,attestation_digest TEXT,filter_hash TEXT,filter_bytes TEXT,status TEXT,reject_reason TEXT);
+CREATE TABLE IF NOT EXISTS load_receipts(id TEXT PRIMARY KEY,compilation_id TEXT,node_uid TEXT,node_generation INTEGER,filter_hash TEXT,status TEXT);
+CREATE TABLE IF NOT EXISTS binding_filters(binding TEXT PRIMARY KEY,compilation_id TEXT,filter_hash TEXT);
+CREATE TABLE IF NOT EXISTS start_evidence(start_id TEXT PRIMARY KEY,compilation_id TEXT,filter_hash TEXT,kernel_build TEXT);
 CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY AUTOINCREMENT,subsystem TEXT,request_id TEXT UNIQUE,input TEXT,result TEXT);
 """
+def _migrate(db):
+ cols={r[1] for r in db.execute('PRAGMA table_info(profiles)')}
+ if 'policy' not in cols:db.execute('ALTER TABLE profiles ADD COLUMN policy TEXT')
 def connect(path):
- db=sqlite3.connect(path,isolation_level=None);db.row_factory=sqlite3.Row;db.execute('PRAGMA busy_timeout=3000');db.executescript(SCHEMA);return db
+ db=sqlite3.connect(path,isolation_level=None);db.row_factory=sqlite3.Row;db.execute('PRAGMA busy_timeout=3000');db.executescript(SCHEMA);_migrate(db);return db
 @contextmanager
 def tx(db):
  db.execute('BEGIN IMMEDIATE')
@@ -27,8 +35,8 @@ def one(db,q,a=()):
  r=db.execute(q,a).fetchone();return dict(r) if r else None
 def rows(db,q,a=()):return [dict(r) for r in db.execute(q,a)]
 def execute(db,sub,step):
- from . import profile,admit,incident
- module={'profile':profile,'admit':admit,'incident':incident}[sub]
+ from . import profile,admit,incident,policy_compile
+ module={'profile':profile,'admit':admit,'incident':incident,'policy_compile':policy_compile}[sub]
  with tx(db):
   old=one(db,'SELECT * FROM events WHERE request_id=?',(step['request_id'],))
   if old:return json.loads(old['result']) if old['subsystem']==sub and json.loads(old['input'])==step else {'decision':'request_conflict'}

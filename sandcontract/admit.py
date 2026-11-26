@@ -1,5 +1,6 @@
 import json
 from .store import one,rows
+from . import policy_compile as pc
 
 def run(db,x):
  op=x['op']
@@ -35,15 +36,21 @@ def run(db,x):
   p=one(db,'SELECT * FROM profiles WHERE id=?',(w['profile'],)) if w else None
   n=one(db,'SELECT * FROM nodes WHERE id=?',(x['node'],))
   limit=one(db,'SELECT * FROM tenant_limits WHERE tenant=?',(w['tenant'],)) if w else None
-  if not w or w['status']!='requested' or not p or p['status']!='active' or not n or p['required_feature'] not in json.loads(n['features']) or limit['freeze'] or x.get('capability')!=w['capability']:
+  if not w or w['status']!='requested' or not p or p['status']!='active' or not n or limit['freeze'] or x.get('capability')!=w['capability']:
    return {'decision':'assignment_denied'}
+  if p['required_feature'] not in json.loads(n['features']):return {'decision':'assignment_denied'}
   e=None
   if x.get('capability'):
    e=one(db,"SELECT * FROM exceptions WHERE workload=? AND capability=? AND status='approved' AND until_ts>=?",(w['id'],x['capability'],x['at']))
    if not e:return {'decision':'exception_missing'}
   used=one(db,"SELECT COUNT(*) n FROM bindings WHERE node_uid=? AND node_generation=? AND status IN ('active','at_risk','quarantined')",(n['uid'],n['generation']))['n']
   if used>=n['capacity']:return {'decision':'node_full'}
+  contract=None
+  if p['policy']:
+   contract=pc.loaded_contract(db,n['uid'],n['generation'],p['digest'])
+   if not contract:return {'decision':'contract_not_loaded'}
   db.execute('INSERT INTO bindings VALUES(?,?,?,?,?,?,?)',(x['id'],w['id'],p['digest'],n['uid'],n['generation'],e['id'] if e else None,'active'))
+  if contract:db.execute('INSERT INTO binding_filters VALUES(?,?,?)',(x['id'],contract['id'],contract['filter_hash']))
   db.execute("UPDATE workloads SET node=?,status='assigned' WHERE id=?",(n['id'],w['id']))
   return {'decision':'assigned','digest':p['digest']}
  if op=='start':
@@ -55,8 +62,15 @@ def run(db,x):
   exception=one(db,"SELECT * FROM exceptions WHERE id=? AND status='approved' AND until_ts>=?",(b['exception_id'],x['at'])) if b and b['exception_id'] else True
   if not b or b['status']!='active' or not n or not p or p['status']!='active' or limit['freeze'] or not exception or b['node_uid']!=n['uid'] or b['node_generation']!=n['generation'] or x['node_uid']!=n['uid'] or x['profile_digest']!=p['digest']:
    return {'decision':'stale_start_receipt'}
+  bf=one(db,'SELECT * FROM binding_filters WHERE binding=?',(b['id'],))
+  if p['policy']:
+   if not bf or x.get('filter_hash')!=bf['filter_hash']:return {'decision':'filter_hash_mismatch'}
+   if not pc.loaded_contract(db,n['uid'],n['generation'],p['digest']):return {'decision':'filter_not_loaded'}
   if one(db,'SELECT id FROM starts WHERE id=?',(x['id'],)):return {'decision':'start_receipt_conflict'}
   db.execute('INSERT INTO starts VALUES(?,?,?,?,?)',(x['id'],b['id'],p['digest'],n['uid'],x['at']))
+  if bf:
+   att=one(db,'SELECT kernel_build FROM node_attestations WHERE node_uid=? AND node_generation=?',(n['uid'],n['generation']))
+   db.execute('INSERT INTO start_evidence VALUES(?,?,?,?)',(x['id'],bf['compilation_id'],bf['filter_hash'],att['kernel_build'] if att else None))
   db.execute("UPDATE workloads SET status='running' WHERE id=?",(w['id'],))
   return {'decision':'started'}
  raise ValueError(op)

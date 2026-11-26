@@ -1,5 +1,6 @@
 import json
 from .store import one,rows
+from . import policy_compile as pc
 
 def run(db,x):
  op=x['op']
@@ -40,7 +41,7 @@ def run(db,x):
    p=one(db,"SELECT * FROM profiles WHERE id=? AND status='active'",(profile_id,))
    reset=one(db,'SELECT * FROM resets WHERE binding=? ORDER BY at DESC LIMIT 1',(b['id'],)) if b else None
    other=one(db,"SELECT 1 FROM incident_members m JOIN incidents i ON i.id=m.incident WHERE m.binding=? AND i.id!=? AND i.status='open'",(b['id'],case['id'])) if b else None
-   if not b or b['status']!='quarantined' or not n or not p or not reset or other or p['digest']==b['profile_digest'] or b['node_uid']!=n['uid'] or b['node_generation']!=n['generation'] or reset['node_uid']!=n['uid'] or reset['new_digest']!=p['digest'] or reset['at']>x['at'] or p['required_feature'] not in json.loads(n['features']):
+   if not b or b['status']!='quarantined' or not n or not p or not reset or other or p['digest']==b['profile_digest'] or b['node_uid']!=n['uid'] or b['node_generation']!=n['generation'] or reset['node_uid']!=n['uid'] or reset['new_digest']!=p['digest'] or reset['at']>x['at'] or p['required_feature'] not in json.loads(n['features']) or (p['policy'] and not pc.loaded_contract(db,n['uid'],n['generation'],p['digest'])):
     return {'decision':'release_unverified','pending':member['binding']}
    verified.append((b,w,p))
   db.execute("UPDATE incidents SET status='closed' WHERE id=?",(case['id'],))
