@@ -14,6 +14,19 @@ CREATE TABLE IF NOT EXISTS violations(id TEXT PRIMARY KEY,binding TEXT,kind TEXT
 CREATE TABLE IF NOT EXISTS incidents(id TEXT PRIMARY KEY,binding TEXT,scope TEXT,status TEXT,reason TEXT);
 CREATE TABLE IF NOT EXISTS incident_members(incident TEXT,binding TEXT,PRIMARY KEY(incident,binding));
 CREATE TABLE IF NOT EXISTS resets(id TEXT PRIMARY KEY,binding TEXT,node_uid TEXT,new_digest TEXT,at INTEGER);
+CREATE TABLE IF NOT EXISTS datasets(id TEXT PRIMARY KEY,serving_key TEXT,serving_version INTEGER,writer TEXT,halted_at INTEGER,restored_at INTEGER);
+CREATE TABLE IF NOT EXISTS key_leases(id TEXT PRIMARY KEY,workload TEXT,start_id TEXT,generation INTEGER,dataset TEXT,key_id TEXT,version INTEGER,purpose TEXT,expires_at INTEGER,state TEXT,revoked_at INTEGER);
+CREATE TABLE IF NOT EXISTS key_copies(id TEXT PRIMARY KEY,key_id TEXT,version INTEGER,holder TEXT,kind TEXT,online INTEGER,at INTEGER);
+CREATE TABLE IF NOT EXISTS key_compromises(id TEXT PRIMARY KEY,key_id TEXT,version INTEGER,evidence TEXT,at INTEGER);
+CREATE TABLE IF NOT EXISTS key_fences(id TEXT PRIMARY KEY,key_id TEXT,version INTEGER,holder TEXT,kind TEXT,at INTEGER);
+CREATE TABLE IF NOT EXISTS recoveries(id TEXT PRIMARY KEY,key_id TEXT,version INTEGER,strategy TEXT,state TEXT,opened_at INTEGER,closed_at INTEGER);
+CREATE TABLE IF NOT EXISTS dataset_pages(dataset TEXT,record INTEGER,key_id TEXT,version INTEGER,source TEXT,PRIMARY KEY(dataset,record));
+CREATE TABLE IF NOT EXISTS staged_pages(dataset TEXT,record INTEGER,key_id TEXT,version INTEGER,source TEXT,PRIMARY KEY(dataset,record));
+CREATE TABLE IF NOT EXISTS snapshots(id TEXT PRIMARY KEY,dataset TEXT,up_to INTEGER,key_id TEXT,version INTEGER,at INTEGER);
+CREATE TABLE IF NOT EXISTS customer_acks(dataset TEXT,record INTEGER,at INTEGER,PRIMARY KEY(dataset,record));
+CREATE TABLE IF NOT EXISTS customer_logs(dataset TEXT,record INTEGER,at INTEGER,PRIMARY KEY(dataset,record));
+CREATE TABLE IF NOT EXISTS read_facts(id TEXT PRIMARY KEY,dataset TEXT,record INTEGER,key_id TEXT,version INTEGER,at INTEGER,classification TEXT);
+CREATE TABLE IF NOT EXISTS notifications(id TEXT PRIMARY KEY,kind TEXT,detail TEXT,at INTEGER);
 CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY AUTOINCREMENT,subsystem TEXT,request_id TEXT UNIQUE,input TEXT,result TEXT);
 """
 def connect(path):
@@ -27,8 +40,8 @@ def one(db,q,a=()):
  r=db.execute(q,a).fetchone();return dict(r) if r else None
 def rows(db,q,a=()):return [dict(r) for r in db.execute(q,a)]
 def execute(db,sub,step):
- from . import profile,admit,incident
- module={'profile':profile,'admit':admit,'incident':incident}[sub]
+ from . import profile,admit,incident,secret_recovery
+ module={'profile':profile,'admit':admit,'incident':incident,'secret':secret_recovery}[sub]
  with tx(db):
   old=one(db,'SELECT * FROM events WHERE request_id=?',(step['request_id'],))
   if old:return json.loads(old['result']) if old['subsystem']==sub and json.loads(old['input'])==step else {'decision':'request_conflict'}
