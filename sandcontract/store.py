@@ -17,7 +17,10 @@ CREATE TABLE IF NOT EXISTS resets(id TEXT PRIMARY KEY,binding TEXT,node_uid TEXT
 CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY AUTOINCREMENT,subsystem TEXT,request_id TEXT UNIQUE,input TEXT,result TEXT);
 """
 def connect(path):
- db=sqlite3.connect(path,isolation_level=None);db.row_factory=sqlite3.Row;db.execute('PRAGMA busy_timeout=3000');db.executescript(SCHEMA);return db
+ db=sqlite3.connect(path,isolation_level=None);db.row_factory=sqlite3.Row;db.execute('PRAGMA busy_timeout=3000');db.executescript(SCHEMA)
+ from . import incident_indemnity
+ incident_indemnity.init(db)
+ return db
 @contextmanager
 def tx(db):
  db.execute('BEGIN IMMEDIATE')
@@ -27,8 +30,8 @@ def one(db,q,a=()):
  r=db.execute(q,a).fetchone();return dict(r) if r else None
 def rows(db,q,a=()):return [dict(r) for r in db.execute(q,a)]
 def execute(db,sub,step):
- from . import profile,admit,incident
- module={'profile':profile,'admit':admit,'incident':incident}[sub]
+ from . import profile,admit,incident,incident_indemnity
+ module={'profile':profile,'admit':admit,'incident':incident,'indemnity':incident_indemnity}[sub]
  with tx(db):
   old=one(db,'SELECT * FROM events WHERE request_id=?',(step['request_id'],))
   if old:return json.loads(old['result']) if old['subsystem']==sub and json.loads(old['input'])==step else {'decision':'request_conflict'}
