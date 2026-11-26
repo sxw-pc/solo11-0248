@@ -27,8 +27,9 @@ def one(db,q,a=()):
  r=db.execute(q,a).fetchone();return dict(r) if r else None
 def rows(db,q,a=()):return [dict(r) for r in db.execute(q,a)]
 def execute(db,sub,step):
- from . import profile,admit,incident
- module={'profile':profile,'admit':admit,'incident':incident}[sub]
+ from . import profile,admit,incident,usage_settlement
+ module={'profile':profile,'admit':admit,'incident':incident,
+         'settlement':usage_settlement,'usage_settlement':usage_settlement}[sub]
  with tx(db):
   old=one(db,'SELECT * FROM events WHERE request_id=?',(step['request_id'],))
   if old:return json.loads(old['result']) if old['subsystem']==sub and json.loads(old['input'])==step else {'decision':'request_conflict'}
