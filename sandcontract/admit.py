@@ -1,5 +1,6 @@
 import json
 from .store import one,rows
+from . import node_handoff
 
 def run(db,x):
  op=x['op']
@@ -41,9 +42,14 @@ def run(db,x):
   if x.get('capability'):
    e=one(db,"SELECT * FROM exceptions WHERE workload=? AND capability=? AND status='approved' AND until_ts>=?",(w['id'],x['capability'],x['at']))
    if not e:return {'decision':'exception_missing'}
-  used=one(db,"SELECT COUNT(*) n FROM bindings WHERE node_uid=? AND node_generation=? AND status IN ('active','at_risk','quarantined')",(n['uid'],n['generation']))['n']
-  if used>=n['capacity']:return {'decision':'node_full'}
+  node_handoff.ensure_chassis(db,n['uid'],n['capacity'],n['id'],n['generation'],x.get('at'))
+  # Physical capacity belongs to the chassis UID and is shared by every boot
+  # generation.  Filtering by the current generation made an old, still
+  # running generation look empty after a node page replacement.
+  used=node_handoff.physical_used(db,n['uid'])
+  if used>=n['capacity']:return {'decision':node_handoff.dec('node_full')}
   db.execute('INSERT INTO bindings VALUES(?,?,?,?,?,?,?)',(x['id'],w['id'],p['digest'],n['uid'],n['generation'],e['id'] if e else None,'active'))
+  node_handoff.after_assignment(db,x,n)
   db.execute("UPDATE workloads SET node=?,status='assigned' WHERE id=?",(n['id'],w['id']))
   return {'decision':'assigned','digest':p['digest']}
  if op=='start':
@@ -54,9 +60,13 @@ def run(db,x):
   limit=one(db,'SELECT * FROM tenant_limits WHERE tenant=?',(w['tenant'],)) if w else None
   exception=one(db,"SELECT * FROM exceptions WHERE id=? AND status='approved' AND until_ts>=?",(b['exception_id'],x['at'])) if b and b['exception_id'] else True
   if not b or b['status']!='active' or not n or not p or p['status']!='active' or limit['freeze'] or not exception or b['node_uid']!=n['uid'] or b['node_generation']!=n['generation'] or x['node_uid']!=n['uid'] or x['profile_digest']!=p['digest']:
+   # Still preserve an authentic old-agent start receipt as physical occupancy
+   # evidence; it simply cannot confirm a start under the current generation.
+   node_handoff.capture_start_receipt(db,x,b)
    return {'decision':'stale_start_receipt'}
   if one(db,'SELECT id FROM starts WHERE id=?',(x['id'],)):return {'decision':'start_receipt_conflict'}
   db.execute('INSERT INTO starts VALUES(?,?,?,?,?)',(x['id'],b['id'],p['digest'],n['uid'],x['at']))
+  node_handoff.after_start(db,x,b)
   db.execute("UPDATE workloads SET status='running' WHERE id=?",(w['id'],))
   return {'decision':'started'}
- raise ValueError(op)
+ return node_handoff.run(db,x)

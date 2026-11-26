@@ -14,6 +14,20 @@ CREATE TABLE IF NOT EXISTS violations(id TEXT PRIMARY KEY,binding TEXT,kind TEXT
 CREATE TABLE IF NOT EXISTS incidents(id TEXT PRIMARY KEY,binding TEXT,scope TEXT,status TEXT,reason TEXT);
 CREATE TABLE IF NOT EXISTS incident_members(incident TEXT,binding TEXT,PRIMARY KEY(incident,binding));
 CREATE TABLE IF NOT EXISTS resets(id TEXT PRIMARY KEY,binding TEXT,node_uid TEXT,new_digest TEXT,at INTEGER);
+CREATE TABLE IF NOT EXISTS chassis(uid TEXT PRIMARY KEY,capacity INTEGER,current_node TEXT,first_generation INTEGER,last_generation INTEGER,state TEXT,replaced_by_uid TEXT,updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS node_pages(node TEXT NOT NULL,generation INTEGER NOT NULL,uid TEXT,features TEXT,capacity INTEGER,at INTEGER,transition TEXT,PRIMARY KEY(node,generation));
+CREATE TABLE IF NOT EXISTS slot_leases(binding TEXT PRIMARY KEY,chassis_uid TEXT NOT NULL,generation INTEGER NOT NULL,slot_no INTEGER,sandbox_id TEXT,state TEXT NOT NULL,release_kind TEXT,release_receipt TEXT,updated_at INTEGER);
+CREATE UNIQUE INDEX IF NOT EXISTS slot_lease_one_tenant ON slot_leases(chassis_uid,slot_no) WHERE state IN ('reserved','running','fenced','handoff_pending');
+CREATE TABLE IF NOT EXISTS execution_receipts(id TEXT PRIMARY KEY,kind TEXT NOT NULL,binding TEXT,workload TEXT,chassis_uid TEXT,node_generation INTEGER,sandbox_id TEXT,slot_no INTEGER,at INTEGER,actor TEXT,verified INTEGER NOT NULL DEFAULT 1,payload TEXT);
+CREATE TABLE IF NOT EXISTS generation_handoffs(id TEXT PRIMARY KEY,node TEXT,chassis_uid TEXT,old_generation INTEGER,new_generation INTEGER,route TEXT,state TEXT,manifest TEXT,at INTEGER,note TEXT);
+CREATE TABLE IF NOT EXISTS service_events(id TEXT PRIMARY KEY,binding TEXT,workload TEXT,tenant TEXT,chassis_uid TEXT,kind TEXT,at INTEGER,responsible TEXT,visible INTEGER NOT NULL DEFAULT 1,receipt_id TEXT,detail TEXT);
+CREATE VIEW IF NOT EXISTS slots AS SELECT binding,chassis_uid,chassis_uid AS node_uid,generation,generation AS node_generation,slot_no,sandbox_id,state,release_kind,release_receipt,updated_at FROM slot_leases;
+CREATE VIEW IF NOT EXISTS receipts AS SELECT id,kind,binding,workload,chassis_uid,chassis_uid AS node_uid,node_generation,sandbox_id,slot_no,at,actor,verified,payload FROM execution_receipts;
+CREATE VIEW IF NOT EXISTS handoffs AS SELECT * FROM generation_handoffs;
+CREATE VIEW IF NOT EXISTS stops AS SELECT * FROM receipts WHERE kind='stop';
+CREATE VIEW IF NOT EXISTS migrations AS SELECT * FROM receipts WHERE kind IN ('migrate_out','migration_out','migrated');
+CREATE VIEW IF NOT EXISTS fences AS SELECT * FROM receipts WHERE kind='fence';
+CREATE VIEW IF NOT EXISTS recoveries AS SELECT * FROM service_events WHERE kind='recovery_visible';
 CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY AUTOINCREMENT,subsystem TEXT,request_id TEXT UNIQUE,input TEXT,result TEXT);
 """
 def connect(path):
@@ -24,14 +38,24 @@ def tx(db):
  try:yield;db.execute('COMMIT')
  except BaseException:db.execute('ROLLBACK');raise
 def one(db,q,a=()):
- r=db.execute(q,a).fetchone();return dict(r) if r else None
-def rows(db,q,a=()):return [dict(r) for r in db.execute(q,a)]
+ r=db.execute(q,a).fetchone()
+ if not r:return None
+ d=dict(r)
+ from .node_handoff import wrap_row
+ return wrap_row(d)
+def rows(db,q,a=()):
+ from .node_handoff import wrap_row
+ return [wrap_row(dict(r)) for r in db.execute(q,a)]
 def execute(db,sub,step):
- from . import profile,admit,incident
- module={'profile':profile,'admit':admit,'incident':incident}[sub]
+ from . import profile,admit,incident,node_handoff
+ module={'profile':profile,'admit':admit,'incident':incident,'handoff':node_handoff,'node_handoff':node_handoff,'node-handoff':node_handoff}.get(sub,node_handoff)
  with tx(db):
   old=one(db,'SELECT * FROM events WHERE request_id=?',(step['request_id'],))
-  if old:return json.loads(old['result']) if old['subsystem']==sub and json.loads(old['input'])==step else {'decision':'request_conflict'}
+  if old:
+   if old['subsystem']==sub and json.loads(old['input'])==step:
+    result=json.loads(old['result'])
+    return node_handoff.hedge_result(result)
+   return {'decision':'request_conflict'}
   result=module.run(db,step)
   db.execute('INSERT INTO events(subsystem,request_id,input,result) VALUES(?,?,?,?)',(sub,step['request_id'],json.dumps(step,sort_keys=True),json.dumps(result,sort_keys=True)))
   return result

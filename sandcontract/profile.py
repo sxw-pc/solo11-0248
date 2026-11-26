@@ -1,5 +1,6 @@
 import hashlib,json
 from .store import one,rows
+from . import node_handoff
 
 def digest(x):
  data={k:x[k] for k in ('syscalls','devices','network','required_feature')}
@@ -10,6 +11,7 @@ def run(db,x):
   old=one(db,'SELECT * FROM nodes WHERE id=?',(x['id'],))
   if x['capacity']<1 or (old and x['generation']<=old['generation']):return {'decision':'stale_or_invalid_node'}
   db.execute('INSERT INTO nodes VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET uid=excluded.uid,generation=excluded.generation,features=excluded.features,capacity=excluded.capacity',(x['id'],x['uid'],x['generation'],json.dumps(x['features']),x['capacity']))
+  node_handoff.on_node_page(db,x,old)
   return {'decision':'node_recorded'}
  if op=='publish':
   if not x['syscalls'] or len(x['syscalls'])!=len(set(x['syscalls'])) or x['revision']<1:return {'decision':'invalid_profile'}
@@ -32,4 +34,4 @@ def run(db,x):
   db.execute("UPDATE profiles SET status='revoked' WHERE id=?",(x['id'],))
   db.execute("UPDATE bindings SET status='at_risk' WHERE profile_digest=? AND status='active'",(p['digest'],))
   return {'decision':'revoked'}
- raise ValueError(op)
+ return node_handoff.run(db,x)
