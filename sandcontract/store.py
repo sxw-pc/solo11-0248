@@ -27,13 +27,17 @@ def one(db,q,a=()):
  r=db.execute(q,a).fetchone();return dict(r) if r else None
 def rows(db,q,a=()):return [dict(r) for r in db.execute(q,a)]
 def execute(db,sub,step):
- from . import profile,admit,incident
- module={'profile':profile,'admit':admit,'incident':incident}[sub]
+ from . import profile,admit,incident,regulatory_delivery
+ _reg=regulatory_delivery
+ module={'profile':profile,'admit':admit,'incident':incident,
+         'regulatory':_reg,'regulatory_delivery':_reg,'delivery':_reg,
+         'legal_delivery':_reg,'reg_delivery':_reg}[sub]
  with tx(db):
-  old=one(db,'SELECT * FROM events WHERE request_id=?',(step['request_id'],))
+  request_id=step.get('request_id')
+  old=one(db,'SELECT * FROM events WHERE request_id=?',(request_id,)) if request_id is not None else None
   if old:return json.loads(old['result']) if old['subsystem']==sub and json.loads(old['input'])==step else {'decision':'request_conflict'}
   result=module.run(db,step)
-  db.execute('INSERT INTO events(subsystem,request_id,input,result) VALUES(?,?,?,?)',(sub,step['request_id'],json.dumps(step,sort_keys=True),json.dumps(result,sort_keys=True)))
+  db.execute('INSERT INTO events(subsystem,request_id,input,result) VALUES(?,?,?,?)',(sub,request_id,json.dumps(step,sort_keys=True,default=str),json.dumps(result,sort_keys=True,default=str)))
   return result
 def replay(path):
  source=connect(path);target=connect(':memory:');events=rows(source,'SELECT subsystem,input,result FROM events ORDER BY seq');diff=[]
